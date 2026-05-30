@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import re
+import contextlib
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -110,7 +109,7 @@ def scan_all(repos_dir: str | Path) -> dict[str, list[DepEntry]]:
 def build_dep_index(all_entries: dict[str, list[DepEntry]]) -> dict[str, list[DepEntry]]:
     """Build a {package_name: [DepEntry]} index across all repos."""
     index: dict[str, list[DepEntry]] = defaultdict(list)
-    for repo, entries in all_entries.items():
+    for _repo, entries in all_entries.items():
         for entry in entries:
             index[entry.name].append(entry)
     return dict(index)
@@ -158,29 +157,17 @@ def recommend_version(entries: list[DepEntry]) -> str:
         for part in s.split(","):
             part = part.strip()
             if part.startswith(">="):
-                ver_str = part[2:].strip()
-                try:
-                    min_versions.append(Version(ver_str))
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[2:].strip()))
             elif part.startswith(">") and not part.startswith(">="):
-                ver_str = part[1:].strip()
-                try:
-                    min_versions.append(Version(ver_str))
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[1:].strip()))
             elif part.startswith("<") and not part.startswith("<="):
-                ver_str = part[1:].strip()
-                try:
-                    upper_bounds.append(("<", Version(ver_str)))
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    upper_bounds.append(("<", Version(part[1:].strip())))
             elif part.startswith("<="):
-                ver_str = part[2:].strip()
-                try:
-                    upper_bounds.append(("<=", Version(ver_str)))
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    upper_bounds.append(("<=", Version(part[2:].strip())))
 
     if not min_versions:
         return ""

@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
-import pytest
-
 from crossrepo_dep_manager.scanner import (
-    scan_repo,
-    scan_all,
+    DepEntry,
     build_dep_index,
     find_conflicts,
-    recommend_version,
     generate_fix,
-    DepEntry,
+    recommend_version,
+    scan_all,
+    scan_repo,
 )
 
 
@@ -179,7 +175,7 @@ class TestGenerateFix:
         ]
         fixes = generate_fix(entries, ">=1.5.0")
         assert "a" in fixes
-        assert "mcp[server]>=1.5.0" == fixes["a"]
+        assert fixes["a"] == "mcp[server]>=1.5.0"
 
 
 class TestFixer:

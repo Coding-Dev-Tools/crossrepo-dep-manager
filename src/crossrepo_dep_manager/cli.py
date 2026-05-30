@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from crossrepo_dep_manager.fixer import apply_all_fixes
 from crossrepo_dep_manager.scanner import (
-    scan_all,
     build_dep_index,
     find_conflicts,
-    recommend_version,
     generate_fix,
+    recommend_version,
+    scan_all,
 )
-from crossrepo_dep_manager.fixer import apply_all_fixes
 
 app = typer.Typer(
     name="crossrepo-dep",

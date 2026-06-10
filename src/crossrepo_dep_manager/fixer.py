@@ -22,9 +22,9 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     # Match: dep_name[optional_extras] + version_specifiers (e.g. >=8.1.0,<2)
     # Version chars: digits, dots, commas, comparison ops, tilde, equals
     pattern = (
-        rf'({escaped_name}(?:\[[^\]]*\])?'  # dep name + optional extras
-        rf'[\s><=!~.]+'  # comparison operator(s)
-        rf'[\d.,<>=!~\w]+)'  # version numbers and compound specs
+        rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
+        rf"[\s><=!~.]+"  # comparison operator(s)
+        rf"[\d.,<>=!~\w]+)"  # version numbers and compound specs
     )
 
     result, count = re.subn(pattern, new_raw, text)
@@ -76,11 +76,13 @@ def apply_all_fixes(
     for repo, dep_fixes in sorted(fixes.items()):
         for dep_name, new_raw in sorted(dep_fixes.items()):
             changed = apply_fix(repos_dir, repo, dep_name, new_raw, dry_run=dry_run)
-            results.append({
-                "repo": repo,
-                "dep": dep_name,
-                "new": new_raw,
-                "changed": changed,
-                "dry_run": dry_run,
-            })
+            results.append(
+                {
+                    "repo": repo,
+                    "dep": dep_name,
+                    "new": new_raw,
+                    "changed": changed,
+                    "dry_run": dry_run,
+                }
+            )
     return results

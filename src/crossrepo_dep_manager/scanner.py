@@ -83,14 +83,16 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
         if parsed is None:
             continue
         name, specs, extras, marker = parsed
-        entries.append(DepEntry(
-            repo=repo_name,
-            raw=raw,
-            name=name,
-            specifiers=specs,
-            extras=extras,
-            marker=marker,
-        ))
+        entries.append(
+            DepEntry(
+                repo=repo_name,
+                raw=raw,
+                name=name,
+                specifiers=specs,
+                extras=extras,
+                marker=marker,
+            )
+        )
     return entries
 
 
@@ -123,11 +125,13 @@ def find_conflicts(index: dict[str, list[DepEntry]], min_repos: int = 3) -> list
         if len(repos) < min_repos:
             continue
         unique_specs = sorted(set(e.specifiers for e in entries))
-        reports.append(ConflictReport(
-            package=name,
-            entries=entries,
-            unique_specs=unique_specs,
-        ))
+        reports.append(
+            ConflictReport(
+                package=name,
+                entries=entries,
+                unique_specs=unique_specs,
+            )
+        )
     return reports
 
 

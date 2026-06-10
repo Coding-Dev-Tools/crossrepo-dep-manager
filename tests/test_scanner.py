@@ -37,7 +37,7 @@ def _make_repo(tmp: Path, name: str, deps: list[str], opt_deps: dict[str, list[s
         lines.append("")
         lines.append("[project.optional-dependencies]")
         for key, vals in opt_deps.items():
-            lines.append(f'{key} = [')
+            lines.append(f"{key} = [")
             for v in vals:
                 lines.append(f'    "{v}",')
             lines.append("]")
@@ -62,7 +62,8 @@ class TestScanRepo:
 
     def test_optional_deps(self, tmp_path):
         repo = _make_repo(
-            tmp_path, "myrepo",
+            tmp_path,
+            "myrepo",
             ["click>=8.1.0"],
             {"dev": ["pytest>=7.0.0", "ruff>=0.4.0"]},
         )

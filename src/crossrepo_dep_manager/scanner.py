@@ -156,7 +156,12 @@ def recommend_version(entries: list[DepEntry]) -> str:
         s = e.specifiers
         for part in s.split(","):
             part = part.strip()
-            if part.startswith(">="):
+            if part.startswith("~="):
+                # Compatible release: ~=x.y.z means >=x.y.z, ==x.y.*
+                # Treat the version as a minimum floor.
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[2:].strip()))
+            elif part.startswith(">="):
                 with contextlib.suppress(Exception):
                     min_versions.append(Version(part[2:].strip()))
             elif part.startswith(">") and not part.startswith(">="):

@@ -19,12 +19,14 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     Returns (new_text, replacement_count).
     """
     escaped_name = re.escape(dep_name)
-    # Match: dep_name[optional_extras] + version_specifiers (e.g. >=8.1.0,<2)
-    # Version chars: digits, dots, commas, comparison ops, tilde, equals
+    # Match: dep_name[optional_extras] + version_specifiers + optional PEP 508 marker.
+    # Capturing the marker ensures it is replaced atomically when new_raw already
+    # contains the (possibly updated) marker, preventing duplication.
     pattern = (
         rf'({escaped_name}(?:\[[^\]]*\])?'  # dep name + optional extras
         rf'[\s><=!~.]+'  # comparison operator(s)
-        rf'[\d.,<>=!~\w]+)'  # version numbers and compound specs
+        rf'[\d.,<>=!~\w]+'  # version numbers and compound specs
+        rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
     )
 
     result, count = re.subn(pattern, new_raw, text)

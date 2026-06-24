@@ -31,4 +31,3 @@ repos:
         entry: python -m pytest -q
         language: system
         pass_filenames: false
-        always_run: true

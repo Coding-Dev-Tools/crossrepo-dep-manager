@@ -12,8 +12,6 @@ updates:
       - "pip"
     commit-message:
       prefix: "deps"
-    reviewers:
-      - "Coding-Dev-Tools/engineers"
     assignees:
       - "dev-engineer"
 

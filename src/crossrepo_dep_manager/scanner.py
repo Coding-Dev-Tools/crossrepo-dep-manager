@@ -145,11 +145,21 @@ def recommend_version(entries: list[DepEntry]) -> str:
 
     Strategy: use the highest minimum version across repos,
     preserving the broadest compatible range.
+
+    Supported specifier forms and how they contribute:
+    - ``>=X``   → floor at X
+    - ``~=X.Y`` → compatible-release floor at X.Y (treated as >=X.Y)
+    - ``>X``    → floor at X (strict; recommendation promotes to >=X)
+    - ``==X``   → exact pin; contributes X as a floor so that a repo pinned to
+                  a higher version than others raises the fleet minimum correctly.
+                  Wildcard pins (``==2.8.*``) cannot be parsed as a Version and
+                  are silently skipped.
+    - ``<X`` / ``<=X`` → upper bound; preserved in output when compatible
+    - ``!=X``   → exclusion; ignored (not representable as a simple range)
     """
     if not entries:
         return ""
 
-    # Collect all >= specs and find the max
     min_versions: list[Version] = []
     upper_bounds: list[tuple[str, Version]] = []
     for e in entries:
@@ -162,6 +172,11 @@ def recommend_version(entries: list[DepEntry]) -> str:
                 with contextlib.suppress(Exception):
                     min_versions.append(Version(part[2:].strip()))
             elif part.startswith(">="):
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[2:].strip()))
+            elif part.startswith("=="):
+                # Exact pin: contributes its version as a minimum floor.
+                # Wildcard pins (==2.8.*) raise InvalidVersion and are skipped.
                 with contextlib.suppress(Exception):
                     min_versions.append(Version(part[2:].strip()))
             elif part.startswith(">") and not part.startswith(">="):

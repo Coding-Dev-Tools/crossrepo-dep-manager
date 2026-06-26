@@ -268,3 +268,143 @@ class TestFixerMarkerDeduplication:
         assert count == 1
         assert "click>=8.1.0" in result
         assert ";" not in result
+
+
+class TestRecommendVersionExactPin:
+    """== (exact pin) specifiers must contribute their version as a minimum floor."""
+
+    def test_exact_pin_only_returns_recommendation(self):
+        """Two repos with different exact pins → recommend the higher one as >=."""
+        entries = [
+            DepEntry(repo="a", raw="requests==2.27.0", name="requests", specifiers="==2.27.0"),
+            DepEntry(repo="b", raw="requests==2.28.0", name="requests", specifiers="==2.28.0"),
+        ]
+        result = recommend_version(entries)
+        assert result != "", "exact pins should produce a recommendation, not silence"
+        assert "2.28" in result
+
+    def test_exact_pin_mixed_with_range(self):
+        """A higher exact pin must not be ignored when mixed with a lower >= range."""
+        entries = [
+            DepEntry(repo="a", raw="requests==2.28.0", name="requests", specifiers="==2.28.0"),
+            DepEntry(repo="b", raw="requests>=2.25.0", name="requests", specifiers=">=2.25.0"),
+        ]
+        result = recommend_version(entries)
+        # 2.28.0 is a higher floor than >=2.25.0; recommendation must reflect that
+        assert "2.28" in result, f"expected 2.28 floor but got: {result!r}"
+
+    def test_exact_pin_lower_than_range_does_not_lower_floor(self):
+        """A lower exact pin must not pull the recommended floor below the >= floor."""
+        entries = [
+            DepEntry(repo="a", raw="requests==2.20.0", name="requests", specifiers="==2.20.0"),
+            DepEntry(repo="b", raw="requests>=2.28.0", name="requests", specifiers=">=2.28.0"),
+        ]
+        result = recommend_version(entries)
+        assert "2.28" in result, f"expected floor >=2.28 but got: {result!r}"
+
+    def test_exact_pin_wildcard_does_not_crash(self):
+        """==2.8.* wildcard is not a valid packaging.Version; it must be silently skipped."""
+        entries = [
+            DepEntry(repo="a", raw="requests==2.8.*", name="requests", specifiers="==2.8.*"),
+            DepEntry(repo="b", raw="requests>=2.7.0", name="requests", specifiers=">=2.7.0"),
+        ]
+        # Wildcard can't be compared; floor comes only from >=2.7.0
+        result = recommend_version(entries)
+        assert result == ">=2.7.0", f"expected >=2.7.0 but got: {result!r}"
+
+    def test_generate_fix_includes_pinned_repo(self):
+        """generate_fix must produce a fix for a == entry when recommended differs."""
+        entries = [
+            DepEntry(repo="a", raw="requests==2.27.0", name="requests", specifiers="==2.27.0"),
+            DepEntry(repo="b", raw="requests>=2.28.0", name="requests", specifiers=">=2.28.0"),
+        ]
+        recommended = recommend_version(entries)
+        fixes = generate_fix(entries, recommended)
+        # repo "a" has ==2.27.0 which != recommended, so it must get a fix
+        assert "a" in fixes, "pinned repo should be included in fix map"
+        assert "2.28" in fixes["a"]
+        # repo "b" is already at recommended
+        assert "b" not in fixes
+
+
+class TestFixerApplyFix:
+    """apply_fix and apply_all_fixes must correctly read/write pyproject.toml files."""
+
+    def _make_pyproject(self, tmp_path: Path, repo_name: str, dep_line: str) -> Path:
+        repo = tmp_path / repo_name
+        repo.mkdir()
+        content = (
+            "[project]\n"
+            f'name = "{repo_name}"\n'
+            'version = "0.1.0"\n'
+            "dependencies = [\n"
+            f'    "{dep_line}",\n'
+            "]\n"
+        )
+        (repo / "pyproject.toml").write_text(content, encoding="utf-8")
+        return repo
+
+    def test_apply_fix_dry_run_does_not_write(self, tmp_path):
+        """dry_run=True: returns True (would change) but must not modify the file."""
+        from crossrepo_dep_manager.fixer import apply_fix
+
+        self._make_pyproject(tmp_path, "repo-a", "click>=8.0")
+        original = (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        changed = apply_fix(tmp_path, "repo-a", "click", "click>=8.1.0", dry_run=True)
+        assert changed is True
+        after = (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        assert after == original, "dry_run must not write to disk"
+
+    def test_apply_fix_writes_updated_version(self, tmp_path):
+        """dry_run=False must update the pyproject.toml on disk."""
+        from crossrepo_dep_manager.fixer import apply_fix
+
+        self._make_pyproject(tmp_path, "repo-a", "click>=8.0")
+        changed = apply_fix(tmp_path, "repo-a", "click", "click>=8.1.0", dry_run=False)
+        assert changed is True
+        content = (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        assert "click>=8.1.0" in content
+        # Original spec should not appear (replace >=8.1.0 to avoid false negative)
+        assert "click>=8.0" not in content.replace("click>=8.1.0", "")
+
+    def test_apply_fix_missing_repo_returns_false(self, tmp_path):
+        """A repo with no pyproject.toml must return False, not raise."""
+        from crossrepo_dep_manager.fixer import apply_fix
+
+        result = apply_fix(tmp_path, "nonexistent", "click", "click>=8.1.0", dry_run=False)
+        assert result is False
+
+    def test_apply_fix_no_match_returns_false(self, tmp_path):
+        """If the dep is not found in pyproject.toml, return False."""
+        from crossrepo_dep_manager.fixer import apply_fix
+
+        self._make_pyproject(tmp_path, "repo-a", "rich>=13.0.0")
+        changed = apply_fix(tmp_path, "repo-a", "click", "click>=8.1.0", dry_run=False)
+        assert changed is False
+
+    def test_apply_all_fixes_multi_repo(self, tmp_path):
+        """apply_all_fixes must update only the repos in the fix map."""
+        from crossrepo_dep_manager.fixer import apply_all_fixes
+
+        self._make_pyproject(tmp_path, "repo-a", "click>=8.0")
+        self._make_pyproject(tmp_path, "repo-b", "click>=8.1.0")
+        fixes = {"repo-a": {"click": "click>=8.2.0"}}
+        results = apply_all_fixes(tmp_path, fixes, {}, dry_run=False)
+        assert len(results) == 1
+        assert results[0]["changed"] is True
+        assert "click>=8.2.0" in (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        # repo-b must be untouched
+        assert "click>=8.1.0" in (tmp_path / "repo-b" / "pyproject.toml").read_text()
+
+    def test_apply_all_fixes_dry_run(self, tmp_path):
+        """apply_all_fixes with dry_run=True must not write any files."""
+        from crossrepo_dep_manager.fixer import apply_all_fixes
+
+        self._make_pyproject(tmp_path, "repo-a", "click>=8.0")
+        original = (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        fixes = {"repo-a": {"click": "click>=8.2.0"}}
+        results = apply_all_fixes(tmp_path, fixes, {}, dry_run=True)
+        assert results[0]["changed"] is True  # would change
+        assert results[0]["dry_run"] is True
+        after = (tmp_path / "repo-a" / "pyproject.toml").read_text()
+        assert after == original, "dry_run must not write to disk"

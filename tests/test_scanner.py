@@ -15,7 +15,9 @@ from crossrepo_dep_manager.scanner import (
 )
 
 
-def _make_repo(tmp: Path, name: str, deps: list[str], opt_deps: dict[str, list[str]] | None = None) -> Path:
+def _make_repo(
+    tmp: Path, name: str, deps: list[str], opt_deps: dict[str, list[str]] | None = None
+) -> Path:
     """Create a minimal repo with pyproject.toml."""
     repo = tmp / name
     repo.mkdir(parents=True, exist_ok=True)
@@ -148,7 +150,9 @@ class TestRecommendVersion:
     def test_upper_bound_preserved(self):
         entries = [
             DepEntry(repo="a", raw="ruff>=0.4.0", name="ruff", specifiers=">=0.4.0"),
-            DepEntry(repo="b", raw="ruff>=0.9.0,<1.0", name="ruff", specifiers=">=0.9.0,<1.0"),
+            DepEntry(
+                repo="b", raw="ruff>=0.9.0,<1.0", name="ruff", specifiers=">=0.9.0,<1.0"
+            ),
         ]
         result = recommend_version(entries)
         assert ">=0.9.0" in result
@@ -172,7 +176,13 @@ class TestGenerateFix:
 
     def test_extras_preserved(self):
         entries = [
-            DepEntry(repo="a", raw="mcp[server]>=1.0", name="mcp", specifiers=">=1.0", extras=["server"]),
+            DepEntry(
+                repo="a",
+                raw="mcp[server]>=1.0",
+                name="mcp",
+                specifiers=">=1.0",
+                extras=["server"],
+            ),
         ]
         fixes = generate_fix(entries, ">=1.5.0")
         assert "a" in fixes

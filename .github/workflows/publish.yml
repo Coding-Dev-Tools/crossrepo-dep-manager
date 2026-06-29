@@ -53,5 +53,5 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
 
       - name: Publish to PyPI
-        if: ${{ inputs.pypi_target == 'pypi' || github.event_name == 'release' }
+        if: ${{ inputs.pypi_target == 'pypi' || github.event_name == 'release' }}
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,3 +1,14 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# release-audit addendum (senior-dev: deduplicated + Python-aware)
+.env
+.env.*
+!.env.example
+node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/

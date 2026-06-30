@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Security Policy
 
 ## Supported Versions
@@ -34,3 +35,20 @@ We aim to acknowledge reports within **72 hours** and ship a fix within
 - Theoretical issues without a working PoC
 - Denial-of-service via expensive public endpoints
 - Issues in dependencies that have already been reported upstream
+=======
+# Security Policy
+
+## Supported Versions
+
+| Version | Supported          |
+| ------- | ------------------ |
+| latest  | :white_check_mark: |
+
+## Reporting a Vulnerability
+
+If you discover a security vulnerability, please report it by emailing the maintainers directly or opening a GitHub Security Advisory.
+
+**Do not** open a public issue for security vulnerabilities.
+
+We will respond within 48 hours and work to resolve the issue promptly.
+>>>>>>> 09c21bc39ef3358de3b3cd7dd451e323d84ba28e

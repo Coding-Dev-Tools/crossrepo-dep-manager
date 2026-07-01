@@ -1,14 +1,15 @@
 __pycache__/
+*.py[cod]
 *.pyc
 .pytest_cache/
-
-# release-audit addendum (senior-dev: deduplicated + Python-aware)
+*.egg-info/
+dist/
+build/
 .env
 .env.*
 !.env.example
 node_modules/
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*

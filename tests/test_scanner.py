@@ -172,7 +172,13 @@ class TestGenerateFix:
 
     def test_extras_preserved(self):
         entries = [
-            DepEntry(repo="a", raw="mcp[server]>=1.0", name="mcp", specifiers=">=1.0", extras=["server"]),
+            DepEntry(
+                repo="a",
+                raw="mcp[server]>=1.0",
+                name="mcp",
+                specifiers=">=1.0",
+                extras=["server"],
+            ),
         ]
         fixes = generate_fix(entries, ">=1.5.0")
         assert "a" in fixes

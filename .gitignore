@@ -1,3 +1,15 @@
 __pycache__/
+*.py[cod]
 *.pyc
 .pytest_cache/
+*.egg-info/
+dist/
+build/
+.env
+.env.*
+!.env.example
+node_modules/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*

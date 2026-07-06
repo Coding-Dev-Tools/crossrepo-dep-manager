@@ -269,6 +269,16 @@ class TestFixerMarkerDeduplication:
         assert "click>=8.1.0" in result
         assert ";" not in result
 
+    def test_comment_line_not_replaced(self):
+        """Dependency names inside comment lines must not be corrupted."""
+        from crossrepo_dep_manager.fixer import replace_dep_in_text
+
+        text = '# old rich>=13.0.0 deprecated\n    "rich>=13.0.0",\n'
+        result, count = replace_dep_in_text(text, "rich", "rich>=15.0.0")
+        assert count == 1
+        assert "rich>=15.0.0" in result
+        assert "old rich>=15.0.0" not in result
+
 
 class TestRecommendVersionExactPin:
     """== (exact pin) specifiers must contribute their version as a minimum floor."""

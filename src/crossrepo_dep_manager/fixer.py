@@ -17,11 +17,11 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     Matches dep name + optional extras + version spec (e.g. click>=8.0 or mcp[server]>=1.0)
     and replaces just the dep+version portion, preserving surrounding quotes/commas.
     Returns (new_text, replacement_count).
+
+    Comment lines (first non-whitespace character is ``#``) are never touched,
+    so a dependency name appearing in a ``# deprecated`` note is not corrupted.
     """
     escaped_name = re.escape(dep_name)
-    # Match: dep_name[optional_extras] + version_specifiers + optional PEP 508 marker.
-    # Capturing the marker ensures it is replaced atomically when new_raw already
-    # contains the (possibly updated) marker, preventing duplication.
     pattern = (
         rf'({escaped_name}(?:\[[^\]]*\])?'  # dep name + optional extras
         rf'[\s><=!~.]+'  # comparison operator(s)
@@ -29,8 +29,17 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
         rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
     )
 
-    result, count = re.subn(pattern, new_raw, text)
-    return result, count
+    result_lines = []
+    count = 0
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            result_lines.append(line)
+            continue
+        new_line, n = re.subn(pattern, new_raw, line)
+        result_lines.append(new_line)
+        count += n
+    return "\n".join(result_lines), count
 
 
 def apply_fix(

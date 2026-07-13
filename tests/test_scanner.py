@@ -9,6 +9,7 @@ from crossrepo_dep_manager.scanner import (
     build_dep_index,
     find_conflicts,
     generate_fix,
+    normalize_version_spec,
     recommend_version,
     scan_all,
     scan_repo,
@@ -418,3 +419,60 @@ class TestFixerApplyFix:
         assert results[0]["dry_run"] is True
         after = (tmp_path / "repo-a" / "pyproject.toml").read_text()
         assert after == original, "dry_run must not write to disk"
+
+class TestNormalizeVersionSpec:
+    def test_empty(self):
+        assert normalize_version_spec("") == ""
+        assert normalize_version_spec("   ") == ""
+
+    def test_strips_whitespace(self):
+        assert normalize_version_spec("  >=8.1.0  ") == ">=8.1.0"
+
+    def test_reorders_parts(self):
+        # comma ordering must not matter for equality
+        assert normalize_version_spec("<9.0,>=8.1.0") == ">=8.1.0,<9.0"
+        assert normalize_version_spec(">=8.1.0,<9.0") == ">=8.1.0,<9.0"
+
+    def test_drops_empty_parts(self):
+        assert normalize_version_spec(">=8.1.0,") == ">=8.1.0"
+        assert normalize_version_spec(",>=8.1.0") == ">=8.1.0"
+
+    def test_operator_precedence_order(self):
+        # sorted by operator precedence (>=, <=, !=) then version
+        assert normalize_version_spec("<=9.0,>=8.1.0,!=8.5.0") == ">=8.1.0,<=9.0,!=8.5.0"
+
+    def test_preserves_operatorless_tokens(self):
+        # wildcard / operator-less tokens are preserved verbatim
+        assert "==" in normalize_version_spec("==2.8.*")
+
+
+class TestGenerateFixCanonical:
+    def test_already_compliant_reordered_skipped(self):
+        """An entry already at the recommended spec but written in a
+        different operator order must not be 'fixed' (avoids churn)."""
+        entries = [
+            DepEntry(
+                repo="a", raw="click<9.0,>=8.1.0", name="click",
+                specifiers="<9.0,>=8.1.0",
+            ),
+        ]
+        fixes = generate_fix(entries, ">=8.1.0,<9.0")
+        assert fixes == {}
+
+    def test_empty_recommendation_emits_no_fix(self):
+        """generate_fix must never emit a version-less dependency name that
+        would corrupt the pyproject.toml."""
+        entries = [
+            DepEntry(repo="a", raw="click<9.0", name="click", specifiers="<9.0"),
+        ]
+        assert generate_fix(entries, "") == {}
+
+    def test_extras_and_marker_still_fixed_when_not_compliant(self):
+        entries = [
+            DepEntry(
+                repo="a", raw="mcp[server]>=1.0; python_version<'3.11'", name="mcp",
+                specifiers=">=1.0", extras=["server"], marker="python_version<'3.11'",
+            ),
+        ]
+        fixes = generate_fix(entries, ">=1.5.0")
+        assert fixes["a"] == "mcp[server]>=1.5.0; python_version<'3.11'"

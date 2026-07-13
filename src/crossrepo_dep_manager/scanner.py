@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -132,12 +133,35 @@ def find_conflicts(index: dict[str, list[DepEntry]], min_repos: int = 3) -> list
 
 
 def normalize_version_spec(spec: str) -> str:
-    """Normalize a version specifier to a consistent form.
+    """Canonicalize a version specifier string.
 
-    E.g. '>=8.1.0' and '>=8.1' both refer to the same floor;
-    we keep the longer form for precision.
+    - strips surrounding whitespace
+    - splits on commas into (operator, version) parts
+    - drops empty parts
+    - re-emits parts in a stable operator-precedence order so that two
+      specifiers differing only in comma ordering (``>=8.1.0,<9.0`` vs
+      ``<9.0,>=8.1.0``) compare equal after normalization.
+
+    Unrecognized tokens (no leading comparison operator) are preserved
+    verbatim so callers can still reason about them.
     """
-    return spec.strip()
+    spec = spec.strip()
+    if not spec:
+        return ""
+    precedence = {">=": 0, ">": 1, "==": 2, "~=": 3, "<=": 4, "<": 5, "!=": 6}
+    parts: list[tuple[int, str, str]] = []
+    for raw in spec.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        m = re.match(r"(>=|<=|==|~=|!=|>|<)\s*([^\s,]+)", raw)
+        if not m:
+            parts.append((99, raw, raw))
+            continue
+        op, ver = m.group(1), m.group(2)
+        parts.append((precedence.get(op, 10), ver, f"{op}{ver}"))
+    parts.sort(key=lambda p: (p[0], p[1]))
+    return ",".join(p[2] for p in parts)
 
 
 def recommend_version(entries: list[DepEntry]) -> str:
@@ -206,12 +230,20 @@ def recommend_version(entries: list[DepEntry]) -> str:
 def generate_fix(entries: list[DepEntry], recommended: str) -> dict[str, str]:
     """Generate a mapping of repo -> new dep string for fixing a conflict."""
     fixes: dict[str, str] = {}
+    recommended_norm = normalize_version_spec(recommended)
+    # A blank recommendation means no safe unified spec could be computed
+    # (e.g. every entry uses only upper bounds / exclusions). Emitting
+    # ``name + ""`` would write a version-less dependency and corrupt the
+    # pyproject.toml, so bail out instead of producing an invalid fix.
+    if not recommended_norm:
+        return fixes
     for e in entries:
-        if e.specifiers != recommended:
-            new_raw = e.name + recommended
-            if e.extras:
-                new_raw = f"{e.name}[{','.join(e.extras)}]" + recommended
-            if e.marker:
-                new_raw += f"; {e.marker}"
-            fixes[e.repo] = new_raw
+        if normalize_version_spec(e.specifiers) == recommended_norm:
+            continue
+        new_raw = e.name + recommended
+        if e.extras:
+            new_raw = f"{e.name}[{','.join(e.extras)}]" + recommended
+        if e.marker:
+            new_raw += f"; {e.marker}"
+        fixes[e.repo] = new_raw
     return fixes

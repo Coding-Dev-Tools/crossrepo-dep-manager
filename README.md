@@ -66,3 +66,9 @@ The tool recommends `>=8.4.0` (highest floor) and can update repo-a.
 - `fix` is dry-run by default — use `--apply` to write changes
 - Version upper bounds (like `<2.0`) are preserved in recommendations
 - Extras (like `mcp[server]`) are preserved when fixing
+
+## Test
+
+```bash
+pytest -q
+```

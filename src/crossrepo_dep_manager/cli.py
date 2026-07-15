@@ -52,13 +52,15 @@ def scan(
     if format == "json":
         data = []
         for c in conflicts:
-            data.append({
-                "package": c.package,
-                "is_conflict": c.is_conflict,
-                "unique_specs": c.unique_specs,
-                "affected_repos": c.affected_repos,
-                "recommended": recommend_version(c.entries),
-            })
+            data.append(
+                {
+                    "package": c.package,
+                    "is_conflict": c.is_conflict,
+                    "unique_specs": c.unique_specs,
+                    "affected_repos": c.affected_repos,
+                    "recommended": recommend_version(c.entries),
+                }
+            )
         console.print_json(json.dumps(data, indent=2))
         return
 

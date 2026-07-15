@@ -17,18 +17,29 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     Matches dep name + optional extras + version spec (e.g. click>=8.0 or mcp[server]>=1.0)
     and replaces just the dep+version portion, preserving surrounding quotes/commas.
     Returns (new_text, replacement_count).
+
+    Comment lines (first non-whitespace character is ``#``) are never touched,
+    so a dependency name appearing in a ``# deprecated`` note is not corrupted.
     """
     escaped_name = re.escape(dep_name)
-    # Match: dep_name[optional_extras] + version_specifiers (e.g. >=8.1.0,<2)
-    # Version chars: digits, dots, commas, comparison ops, tilde, equals
     pattern = (
-        rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
-        rf"[\s><=!~.]+"  # comparison operator(s)
-        rf"[\d.,<>=!~\w]+)"  # version numbers and compound specs
+        rf'({escaped_name}(?:\[[^\]]*\])?'  # dep name + optional extras
+        rf'[\s><=!~.]+'  # comparison operator(s)
+        rf'[\d.,<>=!~\w]+'  # version numbers and compound specs
+        rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
     )
 
-    result, count = re.subn(pattern, new_raw, text)
-    return result, count
+    result_lines = []
+    count = 0
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            result_lines.append(line)
+            continue
+        new_line, n = re.subn(pattern, new_raw, line)
+        result_lines.append(new_line)
+        count += n
+    return "\n".join(result_lines), count
 
 
 def apply_fix(
@@ -76,13 +87,11 @@ def apply_all_fixes(
     for repo, dep_fixes in sorted(fixes.items()):
         for dep_name, new_raw in sorted(dep_fixes.items()):
             changed = apply_fix(repos_dir, repo, dep_name, new_raw, dry_run=dry_run)
-            results.append(
-                {
-                    "repo": repo,
-                    "dep": dep_name,
-                    "new": new_raw,
-                    "changed": changed,
-                    "dry_run": dry_run,
-                }
-            )
+            results.append({
+                "repo": repo,
+                "dep": dep_name,
+                "new": new_raw,
+                "changed": changed,
+                "dry_run": dry_run,
+            })
     return results

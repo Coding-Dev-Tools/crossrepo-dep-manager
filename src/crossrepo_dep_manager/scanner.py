@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -83,16 +84,14 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
         if parsed is None:
             continue
         name, specs, extras, marker = parsed
-        entries.append(
-            DepEntry(
-                repo=repo_name,
-                raw=raw,
-                name=name,
-                specifiers=specs,
-                extras=extras,
-                marker=marker,
-            )
-        )
+        entries.append(DepEntry(
+            repo=repo_name,
+            raw=raw,
+            name=name,
+            specifiers=specs,
+            extras=extras,
+            marker=marker,
+        ))
     return entries
 
 
@@ -125,23 +124,44 @@ def find_conflicts(index: dict[str, list[DepEntry]], min_repos: int = 3) -> list
         if len(repos) < min_repos:
             continue
         unique_specs = sorted(set(e.specifiers for e in entries))
-        reports.append(
-            ConflictReport(
-                package=name,
-                entries=entries,
-                unique_specs=unique_specs,
-            )
-        )
+        reports.append(ConflictReport(
+            package=name,
+            entries=entries,
+            unique_specs=unique_specs,
+        ))
     return reports
 
 
 def normalize_version_spec(spec: str) -> str:
-    """Normalize a version specifier to a consistent form.
+    """Canonicalize a version specifier string.
 
-    E.g. '>=8.1.0' and '>=8.1' both refer to the same floor;
-    we keep the longer form for precision.
+    - strips surrounding whitespace
+    - splits on commas into (operator, version) parts
+    - drops empty parts
+    - re-emits parts in a stable operator-precedence order so that two
+      specifiers differing only in comma ordering (``>=8.1.0,<9.0`` vs
+      ``<9.0,>=8.1.0``) compare equal after normalization.
+
+    Unrecognized tokens (no leading comparison operator) are preserved
+    verbatim so callers can still reason about them.
     """
-    return spec.strip()
+    spec = spec.strip()
+    if not spec:
+        return ""
+    precedence = {">=": 0, ">": 1, "==": 2, "~=": 3, "<=": 4, "<": 5, "!=": 6}
+    parts: list[tuple[int, str, str]] = []
+    for raw in spec.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        m = re.match(r"(>=|<=|==|~=|!=|>|<)\s*([^\s,]+)", raw)
+        if not m:
+            parts.append((99, raw, raw))
+            continue
+        op, ver = m.group(1), m.group(2)
+        parts.append((precedence.get(op, 10), ver, f"{op}{ver}"))
+    parts.sort(key=lambda p: (p[0], p[1]))
+    return ",".join(p[2] for p in parts)
 
 
 def recommend_version(entries: list[DepEntry]) -> str:
@@ -149,18 +169,38 @@ def recommend_version(entries: list[DepEntry]) -> str:
 
     Strategy: use the highest minimum version across repos,
     preserving the broadest compatible range.
+
+    Supported specifier forms and how they contribute:
+    - ``>=X``   → floor at X
+    - ``~=X.Y`` → compatible-release floor at X.Y (treated as >=X.Y)
+    - ``>X``    → floor at X (strict; recommendation promotes to >=X)
+    - ``==X``   → exact pin; contributes X as a floor so that a repo pinned to
+                  a higher version than others raises the fleet minimum correctly.
+                  Wildcard pins (``==2.8.*``) cannot be parsed as a Version and
+                  are silently skipped.
+    - ``<X`` / ``<=X`` → upper bound; preserved in output when compatible
+    - ``!=X``   → exclusion; ignored (not representable as a simple range)
     """
     if not entries:
         return ""
 
-    # Collect all >= specs and find the max
     min_versions: list[Version] = []
     upper_bounds: list[tuple[str, Version]] = []
     for e in entries:
         s = e.specifiers
         for part in s.split(","):
             part = part.strip()
-            if part.startswith(">="):
+            if part.startswith("~="):
+                # Compatible release: ~=x.y.z means >=x.y.z, ==x.y.*
+                # Treat the version as a minimum floor.
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[2:].strip()))
+            elif part.startswith(">="):
+                with contextlib.suppress(Exception):
+                    min_versions.append(Version(part[2:].strip()))
+            elif part.startswith("=="):
+                # Exact pin: contributes its version as a minimum floor.
+                # Wildcard pins (==2.8.*) raise InvalidVersion and are skipped.
                 with contextlib.suppress(Exception):
                     min_versions.append(Version(part[2:].strip()))
             elif part.startswith(">") and not part.startswith(">="):
@@ -190,12 +230,20 @@ def recommend_version(entries: list[DepEntry]) -> str:
 def generate_fix(entries: list[DepEntry], recommended: str) -> dict[str, str]:
     """Generate a mapping of repo -> new dep string for fixing a conflict."""
     fixes: dict[str, str] = {}
+    recommended_norm = normalize_version_spec(recommended)
+    # A blank recommendation means no safe unified spec could be computed
+    # (e.g. every entry uses only upper bounds / exclusions). Emitting
+    # ``name + ""`` would write a version-less dependency and corrupt the
+    # pyproject.toml, so bail out instead of producing an invalid fix.
+    if not recommended_norm:
+        return fixes
     for e in entries:
-        if e.specifiers != recommended:
-            new_raw = e.name + recommended
-            if e.extras:
-                new_raw = f"{e.name}[{','.join(e.extras)}]" + recommended
-            if e.marker:
-                new_raw += f"; {e.marker}"
-            fixes[e.repo] = new_raw
+        if normalize_version_spec(e.specifiers) == recommended_norm:
+            continue
+        new_raw = e.name + recommended
+        if e.extras:
+            new_raw = f"{e.name}[{','.join(e.extras)}]" + recommended
+        if e.marker:
+            new_raw += f"; {e.marker}"
+        fixes[e.repo] = new_raw
     return fixes

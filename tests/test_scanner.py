@@ -476,3 +476,55 @@ class TestGenerateFixCanonical:
         ]
         fixes = generate_fix(entries, ">=1.5.0")
         assert fixes["a"] == "mcp[server]>=1.5.0; python_version<'3.11'"
+
+
+class TestFindConflictsActionable:
+    """is_conflict must reflect *actionability*, not raw string spelling.
+
+    Mutually-satisfiable specs that differ only in operator order or a
+    redundant upper bound must NOT be reported as conflicts (they need no fix),
+    while a genuine lower floor must still be flagged.
+    """
+
+    def _report(self, specs, raws=None, min_repos=2):
+        entries = []
+        for i, s in enumerate(specs):
+            raw = (raws or specs)[i]
+            entries.append(DepEntry(repo=f"repo{i}", raw=raw, name="click", specifiers=s))
+        index = build_dep_index({"x": entries})
+        return find_conflicts(index, min_repos=min_repos)[0]
+
+    def test_reordered_equivalent_not_a_conflict(self):
+        # >=8.1.0 vs >=8.1.0,<9.0 — same floor, mutually satisfiable.
+        r = self._report([">=8.1.0", ">=8.1.0,<9.0"])
+        assert r.is_conflict is False, f"false conflict: {r.unique_specs}"
+
+    def test_redundant_upper_bound_not_a_conflict(self):
+        # >=8.1.0,<9.0 vs >=8.1.0 — reverse of above, still no actionable conflict.
+        r = self._report([">=8.1.0,<9.0", ">=8.1.0"])
+        assert r.is_conflict is False, f"false conflict: {r.unique_specs}"
+
+    def test_real_lower_floor_is_a_conflict(self):
+        # >=8.0 vs >=8.1.0 — repo0 is genuinely below the unified floor.
+        r = self._report([">=8.0", ">=8.1.0"])
+        assert r.is_conflict is True
+        assert r.recommended == ">=8.1.0"
+
+    def test_equal_floors_not_a_conflict(self):
+        r = self._report([">=8.1.0", ">=8.1.0"])
+        assert r.is_conflict is False
+
+    def test_recommended_field_populated(self):
+        r = self._report([">=8.0", ">=8.1.0"])
+        assert r.recommended == ">=8.1.0"
+
+    def test_min_floor_helper(self):
+        from crossrepo_dep_manager.scanner import _min_floor
+        assert _min_floor(">=8.1.0") == _min_floor(">=8.1.0")
+        # upper bounds don't contribute a floor
+        assert _min_floor(">=8.1.0,<9.0") == _min_floor(">=8.1.0")
+        # strict > contributes its floor; == contributes its pin as a floor
+        assert _min_floor(">8.0") == _min_floor(">=8.0")
+        assert _min_floor("==2.28.0") == _min_floor(">=2.28.0")
+        # only-upper-bound spec has no floor
+        assert _min_floor("<9.0") is None

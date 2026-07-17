@@ -50,7 +50,7 @@ class ConflictReport:
         return sorted(set(e.repo for e in self.entries))
 
 
-def _min_floor(specifiers: str) -> Version | None:
+def min_floor(specifiers: str) -> Version | None:
     """Highest minimum-version floor expressed by a specifier string.
 
     Only lower-bounded operators contribute a floor (``>=``, ``~=``,
@@ -87,11 +87,11 @@ def _compute_is_conflict(entries: list[DepEntry], recommended: str) -> bool:
     """
     if not recommended:
         return False
-    rec_floor = _min_floor(recommended)
+    rec_floor = min_floor(recommended)
     if rec_floor is None:
         return False
     for e in entries:
-        f = _min_floor(e.specifiers)
+        f = min_floor(e.specifiers)
         if f is not None and f < rec_floor:
             return True
     return False
@@ -134,14 +134,16 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
         if parsed is None:
             continue
         name, specs, extras, marker = parsed
-        entries.append(DepEntry(
-            repo=repo_name,
-            raw=raw,
-            name=name,
-            specifiers=specs,
-            extras=extras,
-            marker=marker,
-        ))
+        entries.append(
+            DepEntry(
+                repo=repo_name,
+                raw=raw,
+                name=name,
+                specifiers=specs,
+                extras=extras,
+                marker=marker,
+            )
+        )
     return entries
 
 
@@ -181,12 +183,14 @@ def find_conflicts(index: dict[str, list[DepEntry]], min_repos: int = 3) -> list
             continue
         unique_specs = sorted(set(e.specifiers for e in entries))
         recommended = recommend_version(entries)
-        reports.append(ConflictReport(
-            package=name,
-            entries=entries,
-            unique_specs=unique_specs,
-            recommended=recommended,
-        ))
+        reports.append(
+            ConflictReport(
+                package=name,
+                entries=entries,
+                unique_specs=unique_specs,
+                recommended=recommended,
+            )
+        )
     return reports
 
 

@@ -23,9 +23,9 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     """
     escaped_name = re.escape(dep_name)
     pattern = (
-        rf'({escaped_name}(?:\[[^\]]*\])?'  # dep name + optional extras
-        rf'[\s><=!~.]+'  # comparison operator(s)
-        rf'[\d.,<>=!~\w]+'  # version numbers and compound specs
+        rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
+        rf"[\s><=!~.]+"  # comparison operator(s)
+        rf"[\d.,<>=!~\w]+"  # version numbers and compound specs
         rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
     )
 
@@ -71,14 +71,12 @@ def apply_fix(
 def apply_all_fixes(
     repos_dir: str | Path,
     fixes: dict[str, dict[str, str]],
-    dep_entries: dict[str, list],
     dry_run: bool = True,
 ) -> list[dict]:
     """Apply all fixes and return a list of results.
 
     Args:
         fixes: {repo: {dep_name: new_raw}}
-        dep_entries: {dep_name: [DepEntry]} for getting old values
         dry_run: If True, don't write changes
 
     Returns: [{repo, dep, new, changed, dry_run}, ...]
@@ -87,11 +85,13 @@ def apply_all_fixes(
     for repo, dep_fixes in sorted(fixes.items()):
         for dep_name, new_raw in sorted(dep_fixes.items()):
             changed = apply_fix(repos_dir, repo, dep_name, new_raw, dry_run=dry_run)
-            results.append({
-                "repo": repo,
-                "dep": dep_name,
-                "new": new_raw,
-                "changed": changed,
-                "dry_run": dry_run,
-            })
+            results.append(
+                {
+                    "repo": repo,
+                    "dep": dep_name,
+                    "new": new_raw,
+                    "changed": changed,
+                    "dry_run": dry_run,
+                }
+            )
     return results

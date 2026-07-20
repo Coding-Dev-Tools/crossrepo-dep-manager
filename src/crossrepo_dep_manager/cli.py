@@ -14,6 +14,7 @@ from crossrepo_dep_manager.scanner import (
     build_dep_index,
     find_conflicts,
     generate_fix,
+    min_floor,
     recommend_version,
     scan_all,
 )
@@ -152,7 +153,7 @@ def fix(
                 fix_map[repo] = {}
             fix_map[repo][c.package] = new_raw
 
-    results = apply_all_fixes(rdir, fix_map, index, dry_run=dry_run)
+    results = apply_all_fixes(rdir, fix_map, dry_run=dry_run)
 
     # Show results
     table = Table(title="Fix Results" + (" (DRY RUN)" if dry_run else " (APPLIED)"))
@@ -193,10 +194,14 @@ def outdated(
 
     for c in only_conflicts:
         recommended = recommend_version(c.entries)
-        # Find repos not at the recommended spec
+        rec_floor = min_floor(recommended) if recommended else None
+        # A repo is "lagging" only when its minimum floor is strictly below the
+        # unified floor. Comparing raw specifier strings (e.g. ">=8.1.0" vs
+        # ">=8.1.0,<9.0") would falsely flag compliant repos as lagging.
         lagging = []
         for e in c.entries:
-            if e.specifiers != recommended:
+            e_floor = min_floor(e.specifiers)
+            if rec_floor is not None and e_floor is not None and e_floor < rec_floor:
                 lagging.append(f"{e.repo} ({e.specifiers})")
         if lagging:
             table.add_row(c.package, recommended, "\n".join(lagging))

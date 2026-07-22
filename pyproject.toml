@@ -25,6 +25,9 @@ dev = [
 [project.scripts]
 crossrepo-dep = "crossrepo_dep_manager.cli:app"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/crossrepo_dep_manager"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"
@@ -34,6 +37,7 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]

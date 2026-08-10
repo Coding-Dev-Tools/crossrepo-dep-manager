@@ -119,8 +119,14 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
     if not pyproject.exists():
         return []
 
-    with open(pyproject, "rb") as f:
-        data = tomllib.load(f)
+    try:
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        # Malformed TOML, encoding errors, or empty files must not crash
+        # a multi-repo scan. Treat the repo as having no deps and let
+        # the caller decide whether to report it.
+        return []
 
     all_raw: list[str] = []
     all_raw.extend(data.get("project", {}).get("dependencies", []))

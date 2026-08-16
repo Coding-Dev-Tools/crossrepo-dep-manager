@@ -6,7 +6,7 @@
 # TODO/FIXME check, large file check, and PR comment summary).
 #
 # The reusable workflow is defined in the org .github repo:
-#   Coding-Dev-Tools/.github/.github/workflows/auto-code-review.yml@main
+#   Coding-Dev-Tools/.github/.github/workflows/auto-code-review.yml@9114bb00d7f7a8e1a06310700bb7a539c3034c37
 
 name: Auto Code Review
 
@@ -22,4 +22,4 @@ permissions:
 
 jobs:
   code-review:
-    uses: Coding-Dev-Tools/.github/.github/workflows/auto-code-review.yml@main
+    uses: Coding-Dev-Tools/.github/.github/workflows/auto-code-review.yml@9114bb00d7f7a8e1a06310700bb7a539c3034c37

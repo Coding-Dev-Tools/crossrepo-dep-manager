@@ -2,13 +2,39 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+import tempfile
 from pathlib import Path
 
 
 def _read_pyproject(path: Path) -> str:
     """Read pyproject.toml as text."""
     return path.read_text(encoding="utf-8")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text to *path* atomically via tempfile + fsync + os.replace.
+
+    If the process crashes mid-write, the original file is preserved intact
+    because the new content is written to a sibling temp file first and only
+    swapped in via ``os.replace`` (atomic on POSIX, best-effort on Windows).
+    """
+    fd, tmp_path = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name, suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        # Clean up the temp file on any failure (including KeyboardInterrupt)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
 
 
 def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, int]:
@@ -64,7 +90,7 @@ def apply_fix(
         return False
 
     if not dry_run:
-        pyproject.write_text(updated, encoding="utf-8")
+        _atomic_write_text(pyproject, updated)
     return True
 
 

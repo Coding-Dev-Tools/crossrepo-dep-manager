@@ -113,8 +113,17 @@ def _parse_dep(raw: str) -> tuple[str, str, list[str], str] | None:
     return name, specs, extras, marker
 
 
-def scan_repo(repo_path: str | Path) -> list[DepEntry]:
-    """Scan a single repo's pyproject.toml for all dependencies."""
+def scan_repo(
+    repo_path: str | Path,
+    errors: list[tuple[str, str]] | None = None,
+) -> list[DepEntry]:
+    """Scan a single repo's pyproject.toml for all dependencies.
+
+    If *errors* is a list, unreadable/malformed pyproject.toml files are
+    recorded as ``(repo_name, reason)`` tuples instead of being silently
+    treated as "no dependencies" — a corrupt manifest should be visible
+    to the caller, not invisible.
+    """
     pyproject = Path(repo_path) / "pyproject.toml"
     if not pyproject.exists():
         return []
@@ -122,10 +131,12 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
     try:
         with open(pyproject, "rb") as f:
             data = tomllib.load(f)
-    except Exception:
+    except Exception as exc:
         # Malformed TOML, encoding errors, or empty files must not crash
-        # a multi-repo scan. Treat the repo as having no deps and let
-        # the caller decide whether to report it.
+        # a multi-repo scan. Treat the repo as having no deps, but record
+        # why so callers can surface it.
+        if errors is not None:
+            errors.append((Path(repo_path).name, f"{type(exc).__name__}: {exc}"))
         return []
 
     all_raw: list[str] = []
@@ -153,13 +164,20 @@ def scan_repo(repo_path: str | Path) -> list[DepEntry]:
     return entries
 
 
-def scan_all(repos_dir: str | Path) -> dict[str, list[DepEntry]]:
-    """Scan all repos under a directory. Returns {repo_name: [DepEntry]}."""
+def scan_all(
+    repos_dir: str | Path,
+    errors: list[tuple[str, str]] | None = None,
+) -> dict[str, list[DepEntry]]:
+    """Scan all repos under a directory. Returns {repo_name: [DepEntry]}.
+
+    Pass *errors* to collect ``(repo_name, reason)`` tuples for repos whose
+    pyproject.toml could not be read/parsed.
+    """
     repos_dir = Path(repos_dir)
     results: dict[str, list[DepEntry]] = {}
     for child in sorted(repos_dir.iterdir()):
         if child.is_dir() and (child / "pyproject.toml").exists():
-            entries = scan_repo(child)
+            entries = scan_repo(child, errors=errors)
             if entries:
                 results[child.name] = entries
     return results

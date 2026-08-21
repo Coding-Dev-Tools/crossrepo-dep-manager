@@ -27,6 +27,15 @@ app = typer.Typer(
 console = Console()
 
 
+def _warn_skipped(errors: list[tuple[str, str]]) -> None:
+    """Surface repos skipped due to unreadable pyproject.toml (silent-failure guard)."""
+    if not errors:
+        return
+    console.print("[yellow]Warning: %d repo(s) skipped — unreadable pyproject.toml:[/yellow]" % len(errors))
+    for repo, reason in errors:
+        console.print(f"  [yellow]- {repo}: {reason}[/yellow]")
+
+
 def _repos_dir(repos_dir: str | None) -> Path:
     if repos_dir:
         return Path(repos_dir)
@@ -46,11 +55,16 @@ def scan(
 ) -> None:
     """Scan all repos and report dependency status."""
     rdir = _repos_dir(repos_dir)
-    all_entries = scan_all(rdir)
+    scan_errors: list[tuple[str, str]] = []
+    all_entries = scan_all(rdir, errors=scan_errors)
     index = build_dep_index(all_entries)
     conflicts = find_conflicts(index, min_repos=min_repos)
 
     if format == "json":
+        if scan_errors:
+            console.print_json(
+                json.dumps({"skipped_repos": [{"repo": r, "reason": e} for r, e in scan_errors]}, indent=2)
+            )
         data = []
         for c in conflicts:
             data.append(
@@ -96,11 +110,13 @@ def conflicts(
 ) -> None:
     """Show only version conflicts across repos."""
     rdir = _repos_dir(repos_dir)
-    all_entries = scan_all(rdir)
+    scan_errors: list[tuple[str, str]] = []
+    all_entries = scan_all(rdir, errors=scan_errors)
     index = build_dep_index(all_entries)
     conflicts_list = find_conflicts(index, min_repos=2)
 
     only_conflicts = [c for c in conflicts_list if c.is_conflict]
+    _warn_skipped(scan_errors)
 
     if not only_conflicts:
         console.print("[green]No version conflicts found![/green]")
@@ -129,10 +145,12 @@ def fix(
 ) -> None:
     """Fix version conflicts by normalizing to the highest min version."""
     rdir = _repos_dir(repos_dir)
-    all_entries = scan_all(rdir)
+    scan_errors: list[tuple[str, str]] = []
+    all_entries = scan_all(rdir, errors=scan_errors)
     index = build_dep_index(all_entries)
     conflicts_list = find_conflicts(index, min_repos=2)
     only_conflicts = [c for c in conflicts_list if c.is_conflict]
+    _warn_skipped(scan_errors)
 
     if package:
         only_conflicts = [c for c in only_conflicts if c.package == package]
@@ -178,10 +196,12 @@ def outdated(
 ) -> None:
     """Check for repos with outdated minimum versions relative to the fleet."""
     rdir = _repos_dir(repos_dir)
-    all_entries = scan_all(rdir)
+    scan_errors: list[tuple[str, str]] = []
+    all_entries = scan_all(rdir, errors=scan_errors)
     index = build_dep_index(all_entries)
     conflicts_list = find_conflicts(index, min_repos=2)
     only_conflicts = [c for c in conflicts_list if c.is_conflict]
+    _warn_skipped(scan_errors)
 
     if not only_conflicts:
         console.print("[green]All shared deps are consistent.[/green]")

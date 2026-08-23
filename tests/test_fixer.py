@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crossrepo_dep_manager.fixer import _read_pyproject, apply_all_fixes, apply_fix
+from crossrepo_dep_manager.fixer import (
+    _read_pyproject,
+    apply_all_fixes,
+    apply_fix,
+    replace_dep_in_text,
+)
 
 
 def _make_pyproject(repo_dir: Path, deps: list[str] | None = None) -> Path:
@@ -98,6 +103,48 @@ def test_apply_fix_preserves_comment_lines(tmp_path):
     content = _read_pyproject(pyproject)
     assert content.count("click>=8.1.0") == 1
     assert "old click>=8.1.0" not in content
+
+
+# ---- bare-name (versionless) dependency declarations ----
+
+def test_apply_fix_bare_dep_name(tmp_path):
+    """A dep declared WITHOUT a version specifier is still replaceable."""
+    repo = tmp_path / "bare-repo"
+    _make_pyproject(repo, ["click", "rich>=13.0.0"])
+
+    result = apply_fix(str(tmp_path), "bare-repo", "click", "click>=8.1.0", dry_run=False)
+    assert result is True, "bare (versionless) dep must be replaceable, not a silent no-op"
+    content = _read_pyproject(repo / "pyproject.toml")
+    assert '"click>=8.1.0"' in content
+    assert "rich>=13.0.0" in content
+
+
+def test_apply_fix_bare_dep_with_extras(tmp_path):
+    """Bare declaration with extras (no version) is replaceable."""
+    repo = tmp_path / "extras-bare"
+    _make_pyproject(repo, ["mcp[server]"])
+
+    result = apply_fix(str(tmp_path), "extras-bare", "mcp", "mcp[server]>=1.2", dry_run=False)
+    assert result is True
+    content = _read_pyproject(repo / "pyproject.toml")
+    assert '"mcp[server]>=1.2"' in content
+
+
+def test_replace_bare_name_not_in_prose():
+    """A bare name inside prose text must NOT be rewritten."""
+    text = 'description = "uses click for CLI"\ndependencies = [\n    "click",\n]\n'
+    updated, count = replace_dep_in_text(text, "click", "click>=8.1.0")
+    assert count == 1, "only the real dependency entry should match"
+    assert "uses click for" in updated, "prose mention must be untouched"
+    assert '"click>=8.1.0"' in updated
+
+
+def test_replace_longer_name_not_matched_as_bare():
+    """'clickhouse' must not be corrupted when fixing 'click'."""
+    text = 'dependencies = [\n    "clickhouse>=1.0",\n]\n'
+    updated, count = replace_dep_in_text(text, "click", "click>=8.1.0")
+    assert count == 0
+    assert "clickhouse>=1.0" in updated
 
 
 # ---- apply_all_fixes tests ----

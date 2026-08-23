@@ -50,9 +50,18 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     escaped_name = re.escape(dep_name)
     pattern = (
         rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
-        rf"[\s><=!~.]+"  # comparison operator(s)
-        rf"[\d.,<>=!~\w]+"  # version numbers and compound specs
+        rf"\s*[<>=!~.]+"  # comparison operator(s) — a REAL operator char is required
+        rf"[\d.,<>=!~\w]*"  # version numbers and compound specs
         rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
+    )
+    # Bare declaration: dep name (+extras) with NO version specifier at all,
+    # e.g. "click" or "mcp[server]". Only matched when followed by a token
+    # boundary (quote / comma / closing bracket / whitespace+quote / EOL) so a
+    # name mentioned inside prose ("uses click for CLI") or a longer package
+    # name ("clickhouse") is never corrupted.
+    bare_pattern = (
+        rf"({escaped_name}(?:\[[^\]]*\])?)"  # dep name + optional extras only
+        rf"(?=\s*[\"',\]]|\s*$)"  # must end the dependency token
     )
 
     result_lines = []
@@ -63,6 +72,8 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
             result_lines.append(line)
             continue
         new_line, n = re.subn(pattern, new_raw, line)
+        if n == 0:
+            new_line, n = re.subn(bare_pattern, new_raw, line)
         result_lines.append(new_line)
         count += n
     return "\n".join(result_lines), count

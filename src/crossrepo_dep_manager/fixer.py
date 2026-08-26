@@ -2,13 +2,39 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+import tempfile
 from pathlib import Path
 
 
 def _read_pyproject(path: Path) -> str:
     """Read pyproject.toml as text."""
     return path.read_text(encoding="utf-8")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text to *path* atomically via tempfile + fsync + os.replace.
+
+    If the process crashes mid-write, the original file is preserved intact
+    because the new content is written to a sibling temp file first and only
+    swapped in via ``os.replace`` (atomic on POSIX, best-effort on Windows).
+    """
+    fd, tmp_path = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name, suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        # Clean up the temp file on any failure (including KeyboardInterrupt)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
 
 
 def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, int]:
@@ -22,11 +48,26 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     so a dependency name appearing in a ``# deprecated`` note is not corrupted.
     """
     escaped_name = re.escape(dep_name)
+    # Token-start anchor: the dep name must not be the tail of a longer
+    # package name ("pyrich" when fixing "rich"), otherwise the match starts
+    # mid-word and corrupts the surrounding declaration.
+    word_start = r"(?<![\w.-])"
     pattern = (
+        word_start +
         rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
-        rf"[\s><=!~.]+"  # comparison operator(s)
-        rf"[\d.,<>=!~\w]+"  # version numbers and compound specs
+        rf"\s*[<>=!~.]+"  # comparison operator(s) — a REAL operator char is required
+        rf"[\d.,<>=!~\w]*"  # version numbers and compound specs
         rf'(?:\s*;[^"\n]*)?)'  # optional PEP 508 environment marker
+    )
+    # Bare declaration: dep name (+extras) with NO version specifier at all,
+    # e.g. "click" or "mcp[server]". Only matched when followed by a token
+    # boundary (quote / comma / closing bracket / whitespace+quote / EOL) so a
+    # name mentioned inside prose ("uses click for CLI") or a longer package
+    # name ("clickhouse") is never corrupted.
+    bare_pattern = (
+        word_start +
+        rf"({escaped_name}(?:\[[^\]]*\])?)"  # dep name + optional extras only
+        rf"(?=\s*[\"',\]]|\s*$)"  # must end the dependency token
     )
 
     result_lines = []
@@ -37,6 +78,8 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
             result_lines.append(line)
             continue
         new_line, n = re.subn(pattern, new_raw, line)
+        if n == 0:
+            new_line, n = re.subn(bare_pattern, new_raw, line)
         result_lines.append(new_line)
         count += n
     return "\n".join(result_lines), count
@@ -64,7 +107,7 @@ def apply_fix(
         return False
 
     if not dry_run:
-        pyproject.write_text(updated, encoding="utf-8")
+        _atomic_write_text(pyproject, updated)
     return True
 
 

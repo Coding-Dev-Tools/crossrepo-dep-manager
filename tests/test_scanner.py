@@ -530,3 +530,134 @@ class TestFindConflictsActionable:
         assert min_floor("==2.28.0") == min_floor(">=2.28.0")
         # only-upper-bound spec has no floor
         assert min_floor("<9.0") is None
+
+
+class TestMinFloorEdgeCases:
+    """Coverage for min_floor with invalid/unusual version tokens."""
+
+    def test_invalid_version_token_skipped(self):
+        from crossrepo_dep_manager.scanner import min_floor
+
+        # Invalid version after >= should be skipped, not crash
+        assert min_floor(">=not_a_version") is None
+
+    def test_mixed_valid_and_invalid_tokens(self):
+        from crossrepo_dep_manager.scanner import min_floor
+
+        # Valid floor survives alongside an invalid token
+        result = min_floor(">=8.1.0,>=invalid")
+        assert result is not None
+        assert str(result) == "8.1.0"
+
+    def test_wildcard_pin_skipped(self):
+        from crossrepo_dep_manager.scanner import min_floor
+
+        # Wildcard pins like ==2.8.* cannot parse as Version
+        assert min_floor("==2.8.*") is None
+
+    def test_empty_specifier(self):
+        from crossrepo_dep_manager.scanner import min_floor
+
+        assert min_floor("") is None
+
+
+class TestComputeIsConflictEdgeCases:
+    """Coverage for _compute_is_conflict with empty/no-floor recommended."""
+
+    def test_empty_recommended_is_not_conflict(self):
+        from crossrepo_dep_manager.scanner import DepEntry, _compute_is_conflict
+
+        entries = [DepEntry(repo="a", raw="pkg>=1.0", name="pkg", specifiers=">=1.0", extras=[], marker="")]
+        assert _compute_is_conflict(entries, "") is False
+
+    def test_no_floor_recommended_is_not_conflict(self):
+        from crossrepo_dep_manager.scanner import DepEntry, _compute_is_conflict
+
+        # Only upper bounds → no floor → not a conflict
+        entries = [DepEntry(repo="a", raw="pkg<9.0", name="pkg", specifiers="<9.0", extras=[], marker="")]
+        assert _compute_is_conflict(entries, "<9.0") is False
+
+
+class TestParseDepEdgeCases:
+    """Coverage for _parse_dep with blank/comment/invalid input."""
+
+    def test_blank_input_returns_none(self):
+        from crossrepo_dep_manager.scanner import _parse_dep
+
+        assert _parse_dep("") is None
+        assert _parse_dep("   ") is None
+
+    def test_comment_line_returns_none(self):
+        from crossrepo_dep_manager.scanner import _parse_dep
+
+        assert _parse_dep("# this is a comment") is None
+
+    def test_invalid_pep508_returns_none(self):
+        from crossrepo_dep_manager.scanner import _parse_dep
+
+        assert _parse_dep("!!!invalid===dep") is None
+
+    def test_valid_dep_with_extras_and_marker(self):
+        from crossrepo_dep_manager.scanner import _parse_dep
+
+        result = _parse_dep('tomli>=2.0.0; python_version < "3.11"')
+        assert result is not None
+        name, specs, extras, marker = result
+        assert name == "tomli"
+        assert ">=2.0.0" in specs
+        assert 'python_version < "3.11"' in marker
+
+
+class TestNormalizeVersionSpecEdgeCases:
+    """Coverage for normalize_version_spec with unrecognized operators."""
+
+    def test_unrecognized_operator_preserved(self):
+        from crossrepo_dep_manager.scanner import normalize_version_spec
+
+        # Unrecognized operator falls through to raw preservation
+        result = normalize_version_spec("??1.0")
+        assert "??1.0" in result
+
+    def test_empty_spec(self):
+        from crossrepo_dep_manager.scanner import normalize_version_spec
+
+        assert normalize_version_spec("") == ""
+
+
+class TestRecommendVersionEdgeCases:
+    """Coverage for recommend_version with strict >, <=, and empty min_versions."""
+
+    def test_strict_greater_than_contributes_floor(self):
+        from crossrepo_dep_manager.scanner import DepEntry, recommend_version
+
+        entries = [
+            DepEntry(repo="a", raw="pkg>8.0", name="pkg", specifiers=">8.0", extras=[], marker=""),
+            DepEntry(repo="b", raw="pkg>=7.0", name="pkg", specifiers=">=7.0", extras=[], marker=""),
+        ]
+        result = recommend_version(entries)
+        # >8.0 contributes floor 8.0, >=7.0 contributes 7.0; highest is 8.0
+        assert ">=8.0" in result
+
+    def test_upper_bound_le_preserved(self):
+        from crossrepo_dep_manager.scanner import DepEntry, recommend_version
+
+        entries = [
+            DepEntry(repo="a", raw="pkg>=8.0,<=9.0", name="pkg", specifiers=">=8.0,<=9.0", extras=[], marker=""),
+        ]
+        result = recommend_version(entries)
+        assert ">=8.0" in result
+        assert "<=9.0" in result
+
+    def test_only_upper_bounds_returns_empty(self):
+        from crossrepo_dep_manager.scanner import DepEntry, recommend_version
+
+        entries = [
+            DepEntry(repo="a", raw="pkg<9.0", name="pkg", specifiers="<9.0", extras=[], marker=""),
+        ]
+        result = recommend_version(entries)
+        assert result == ""
+
+    def test_empty_entries_returns_empty(self):
+        from crossrepo_dep_manager.scanner import recommend_version
+
+        assert recommend_version([]) == ""

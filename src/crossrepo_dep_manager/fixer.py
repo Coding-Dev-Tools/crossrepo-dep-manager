@@ -48,7 +48,12 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     so a dependency name appearing in a ``# deprecated`` note is not corrupted.
     """
     escaped_name = re.escape(dep_name)
+    # Token-start anchor: the dep name must not be the tail of a longer
+    # package name ("pyrich" when fixing "rich"), otherwise the match starts
+    # mid-word and corrupts the surrounding declaration.
+    word_start = r"(?<![\w.-])"
     pattern = (
+        word_start +
         rf"({escaped_name}(?:\[[^\]]*\])?"  # dep name + optional extras
         rf"\s*[<>=!~.]+"  # comparison operator(s) — a REAL operator char is required
         rf"[\d.,<>=!~\w]*"  # version numbers and compound specs
@@ -60,6 +65,7 @@ def replace_dep_in_text(text: str, dep_name: str, new_raw: str) -> tuple[str, in
     # name mentioned inside prose ("uses click for CLI") or a longer package
     # name ("clickhouse") is never corrupted.
     bare_pattern = (
+        word_start +
         rf"({escaped_name}(?:\[[^\]]*\])?)"  # dep name + optional extras only
         rf"(?=\s*[\"',\]]|\s*$)"  # must end the dependency token
     )

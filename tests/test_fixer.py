@@ -255,3 +255,19 @@ def test_apply_all_fixes_multiple_deps_per_repo(tmp_path):
     content = _read_pyproject(tmp_path / "multi" / "pyproject.toml")
     assert "click>=8.1.0" in content
     assert "rich>=14.0.0" in content
+
+def test_replace_suffix_of_longer_name_not_matched():
+    """'pyrich>=1.0' must NOT be corrupted when fixing 'rich' (suffix match)."""
+    text = "dependencies = [\n    \"pyrich>=1.0\",\n]\n"
+    updated, count = replace_dep_in_text(text, "rich", "rich>=13.0")
+    assert count == 0, "a longer package name ending in the target must never match"
+    assert '"pyrich>=1.0"' in updated
+
+
+def test_replace_dotted_prefix_not_matched():
+    """Names preceded by '-' or '.' are not matched mid-token."""
+    text = "dependencies = [\n    \"my-rich>=1.0\",\n]\n"
+    updated, count = replace_dep_in_text(text, "rich", "rich>=13.0")
+    assert count == 0
+    assert '"my-rich>=1.0"' in updated
+
